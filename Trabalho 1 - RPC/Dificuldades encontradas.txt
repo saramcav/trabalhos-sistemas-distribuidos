@@ -28,4 +28,16 @@ Tudo ocorreu conforme o esperado; a soma foi realizada corretamente no lado do s
 
 Questão 4)Mostrar código
 
-Questão 5)No meu deu timeout em maquinas diferentes. Testa no de vcs
+Questão 5)No meu deu timeout em maquinas diferentes. Testa no de vcs - No meu deu result expired
+
+Questão 6)
+
+Questão 7)dependente da 5 e 6
+
+Questão 8) 100 -> 0,051 no cliente, 0,026 no servidor e 0,821 tempo de execução total
+            1000 -> 0,212 no cliente, 0,201 no servidor e 1,709 tempo de execução total
+            10000 -> 2,030 no cliente, 2,020 no servidor e 3,438 tempo de execução total
+
+Questão 9) 100 -> 2,552 no cliente, 2,365 no servidor e 3,699 tempo de execução total
+            1000 -> 6,036 no cliente, 5,989 no servidor e 7,142 tempo de execução total
+            10000 -> result expired aqui
