@@ -30,6 +30,7 @@ class Questions():
             
         start = time.time()
         conn = rpyc.connect(server,18861)
+        conn._config['sync_request_timeout'] = 360
         print(f'A soma é: {conn.root.get_sum(vet)}')
         
         end = time.time()
