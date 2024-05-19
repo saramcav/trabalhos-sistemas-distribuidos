@@ -24,7 +24,7 @@ Primeiramente clone o repositório: <br/>
 
 #### Configurando repositório
 1. Vá para o diretório: <br/>
-`cd $env:GOPATH`
+ Windows: `cd $env:GOPATH` <br/> Linux: `cd $GOPATH`
 2. Execute o comando Go: <br/>
 `go mod init trab-sd`
 3. Vá para o diretório: <br/>
