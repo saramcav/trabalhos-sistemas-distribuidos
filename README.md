@@ -4,7 +4,7 @@
 ## Trabalho 2 - Raft
 ### Configurando ambiente
 Primeiramente clone o repositório: <br/>
-`$ git clone https://github.com/SerranoZz/trabalho-sd.git`
+`git clone https://github.com/SerranoZz/trabalho-sd.git`
 
 #### Configurando variáveis de ambiente (Windows)
 1. Configurando variável GOROOT: <br/>
