@@ -37,13 +37,13 @@ const (
 )
 
 type AppendEntriesArgs struct {
-	Term int // leader's term
-	LeaderId int // so follower can redirect clients
+	Term int
+	LeaderId int
 }
 
 type AppendEntriesResult struct {
-	Term int // currentTerm, for leader to update itself
-	Success bool // true if follower contained entry matching prevLogIndex and prevLogTerm
+	Term int
+	Success bool
 }
 
 //
@@ -135,8 +135,6 @@ func (rf *Raft) readPersist(data []byte) {
 type RequestVoteArgs struct {
 	Term int // candidate's term
 	CandidateId int // candidate requesting vote
-	LastLogIndex int // index of candidate's last log entry
-	LastLogTerm int // term of candidate's last log entry
 }
 
 //
@@ -234,6 +232,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
+	fmt.Println("Killing server ", rf.me)
 	rf.isDead = true // set isDead to true
 }
 
@@ -274,6 +273,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesResult) {
+	if(rf.role != Follower) {
+		rf.role = Follower // change role to follower
+	
+	}
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm // return currentTerm so leader can update itself
 		reply.Success = false // false because term is less than currentTerm
@@ -283,10 +286,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesResul
 	rf.currentTerm = args.Term // update currentTerm
 	reply.Term = args.Term // return currentTerm so leader can update itself
 	reply.Success = true // true because term is greater than or equal to currentTerm
-
-	if(rf.role != Follower) {
-		rf.role = Follower // change role to follower
-	}
 
 	rf.startTime = currentTime() // reset start time of timer
 }
@@ -304,6 +303,7 @@ func (rf *Raft) broadcastHeartbeat() {
 		var appendEntriesArgs *AppendEntriesArgs = &AppendEntriesArgs{Term: rf.currentTerm, LeaderId: rf.leaderId}
 		for i := 0; i < len(rf.peers); i++ {
 			if i != rf.me {
+				fmt.Println("Sending heartbeat from ", rf.me ," to ", i)
 				var appendEntriesResult *AppendEntriesResult = &AppendEntriesResult{Term: -1, Success: false}
 				var ok = rf.sendAppendEntries(i, appendEntriesArgs, appendEntriesResult)
 				if(ok && !appendEntriesResult.Success) {
@@ -330,20 +330,14 @@ func (rf *Raft) routine() {
 				rf.votedFor = rf.me // vote for self
 				rf.votesReceived = 1 // vote for self
 				rf.startTime = currentTime() // reset start time of timer
+				fmt.Println("Server ", rf.me, " timed out")
 				go rf.startElection() // start broadcasting request vote messages
-			}
-		} else if rf.role == Leader {
-			go rf.broadcastHeartbeat()
-		} else if rf.role == Candidate {
-			if currTime - rf.startTime > rf.timer {
-				//rf.startElection()
 			}
 		}
 	}
 }
 
 func (rf *Raft) startElection() {
-	fmt.Println("Starting election")
 	rf.role = Candidate // change role to candidate
 	rf.currentTerm++ // increment currentTerm
 	rf.votedFor = rf.me // vote for self
@@ -353,15 +347,12 @@ func (rf *Raft) startElection() {
 }
 
 func (rf *Raft) broadcastRequestVote() {
-	fmt.Println("Broadcasting request vote")
     for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			fmt.Println("Sending request vote from ", rf.me, "to ", i)
-			var requestVoteArgs *RequestVoteArgs = &RequestVoteArgs{Term: rf.currentTerm, CandidateId: rf.me, LastLogIndex: 0, LastLogTerm: 0}
+			var requestVoteArgs *RequestVoteArgs = &RequestVoteArgs{Term: rf.currentTerm, CandidateId: rf.me}
 			var requestVoteReply *RequestVoteReply = &RequestVoteReply{Term: -1, VoteGranted: false}
 			var ok = rf.sendRequestVote(i, requestVoteArgs, requestVoteReply)
 			if(ok && requestVoteReply.VoteGranted) {
-				fmt.Println("Vote granted from ", i, " to ", rf.me)
 				rf.votesReceived++ // increment votes received
 				if(rf.votesReceived > len(rf.peers)/2) { // if majority votes received
 					rf.role = Leader // change role to leader
@@ -374,6 +365,15 @@ func (rf *Raft) broadcastRequestVote() {
 				}
 			}
 		}
+	}
+}
+
+func (rf *Raft) listenHeartBeat() {
+	for {
+		if rf.role != Follower || rf.isDead {
+			break
+		}
+
 	}
 }
 
