@@ -15,8 +15,9 @@ const (
 	Candidate
 	Leader
 
-	heartBeatInterval = 100
-	timeoutNum        = 400
+	heartBeatInterval = 200
+	timeoutNumFollower = 1000
+	timeoutNumElection = 300
 )
 
 type AppendEntriesArgs struct {
@@ -155,7 +156,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
-	} else {
+
+	} else if rf.votedFor == -1 || rf.votedFor == args.CandidateId{
 		rf.votedFor = args.CandidateId
 		rf.currentTerm = args.Term
 		rf.role = Follower
@@ -178,6 +180,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	if rf.role != Follower && !rf.isDead {
+		if args.LeaderId != rf.leaderId {
+			rf.leaderId = args.LeaderId
+		}
 		rf.role = Follower
 		rf.timer = randomTimeFollower()
 	}
@@ -196,13 +201,12 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 func (rf *Raft) routine() {
 	for {
-		var currTime = currentTime()
 		if rf.isDead {
 			return
 		}
 
 		if rf.role == Follower {
-			if (currTime - rf.startTime) > rf.timer {
+			if ((currentTime() - rf.startTime) > rf.timer) && rf.votedFor == -1{
 				fmt.Println("Server ", rf.me, " timed out and became candidate.")
 				rf.mu.Lock()
 				rf.role = Candidate
@@ -227,7 +231,7 @@ func (rf *Raft) startElection() {
 	rf.votedFor = rf.me // vote for self
 	rf.votesReceived = 1
 	rf.startTime = currentTime() // reset start time of timer
-	rf.timer = randomTimeFollower()
+	rf.timer = randomTimeElection()
 	go rf.broadcastRequestVote() // start broadcasting request vote messages
 }
 
@@ -246,6 +250,14 @@ func (rf *Raft) broadcastRequestVote() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 
+					if rf.role != Candidate {
+						return
+				   	}
+
+					if (currentTime() - rf.startTime) > rf.timer {
+						return
+					}
+
 					if requestVoteReply.VoteGranted {
 						rf.votesReceived++
 						if rf.votesReceived > len(rf.peers)/2 {
@@ -254,12 +266,8 @@ func (rf *Raft) broadcastRequestVote() {
 							rf.votedFor = -1
 							rf.votesReceived = 0
 							rf.leaderId = rf.me
-
-							//adicionei
-							rf.startTime = currentTime()
-							rf.timer = randomTimeFollower()
-							rf.broadcastHeartbeat() // Assuming this function exists
 						}
+
 					} else if requestVoteReply.Term > rf.currentTerm {
 						fmt.Println("requestVoteReply.Term > rf.currentTerm")
 						rf.currentTerm = requestVoteReply.Term
@@ -322,7 +330,11 @@ func (rf *Raft) listenHeartBeat() {
 }
 
 func randomTimeFollower() int64 {
-	return int64(timeoutNum + rand.Intn(timeoutNum+1))
+	return int64(timeoutNumFollower + rand.Intn(timeoutNumFollower+1))
+}
+
+func randomTimeElection() int64 {	
+	return int64(timeoutNumElection + rand.Intn(timeoutNumElection+1))
 }
 
 func currentTime() int64 {
