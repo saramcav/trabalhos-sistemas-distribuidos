@@ -56,7 +56,6 @@ type Raft struct {
 	leaderId          int
 	electionTimer     *time.Timer
 	lastHeartbeatSent time.Time
-	//heartbeatTimer *time.Timer
 }
 
 // return currentTerm and whether this server
