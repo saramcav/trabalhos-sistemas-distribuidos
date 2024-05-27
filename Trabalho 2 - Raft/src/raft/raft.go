@@ -49,13 +49,12 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-	currentTerm       int
-	votedFor          int
-	role              Role // role of server (0: follower, 1: candidate, 2: leader)
-	votesReceived     int
-	leaderId          int
-	electionTimer     *time.Timer
-	lastHeartbeatSent time.Time
+	currentTerm   int
+	votedFor      int
+	role          Role // role of server (0: follower, 1: candidate, 2: leader)
+	votesReceived int
+	leaderId      int
+	electionTimer *time.Timer
 }
 
 // return currentTerm and whether this server
@@ -207,8 +206,7 @@ func (rf *Raft) routine() {
 			}
 			rf.startElection()
 		default:
-			if rf.role == Leader && (time.Since(rf.lastHeartbeatSent) > heartbeatInverval) {
-				rf.lastHeartbeatSent = time.Now()
+			if rf.role == Leader {
 				rf.broadcastHeartbeat()
 				time.Sleep(heartbeatInverval * time.Millisecond)
 			}
