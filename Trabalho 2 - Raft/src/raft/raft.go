@@ -17,9 +17,9 @@ const (
 
 	//10 heartbeats per second
 	heartbeatInverval = 100
-	//time between 200 and 350 ms
+	//time between 250 and 400 ms
 	timeInterval = 150 + 1
-	minTime      = 200
+	minTime      = 250
 )
 
 type AppendEntriesArgs struct {
@@ -49,13 +49,14 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-	currentTerm    int
-	votedFor       int
-	role           Role // role of server (0: follower, 1: candidate, 2: leader)
-	votesReceived  int
-	leaderId       int
-	electionTimer  *time.Timer
-	heartbeatTimer *time.Timer
+	currentTerm       int
+	votedFor          int
+	role              Role // role of server (0: follower, 1: candidate, 2: leader)
+	votesReceived     int
+	leaderId          int
+	electionTimer     *time.Timer
+	lastHeartbeatSent time.Time
+	//heartbeatTimer *time.Timer
 }
 
 // return currentTerm and whether this server
@@ -120,7 +121,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.currentTerm = 0
 	rf.votedFor = -1
 	rf.role = Follower
-	rf.heartbeatTimer = time.NewTimer(timeInterval * time.Millisecond)
 	rf.electionTimer = time.NewTimer(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond)
 	rf.votesReceived = 0
 	rf.leaderId = -1
@@ -136,7 +136,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 func (rf *Raft) convertToFollower() {
 	rf.role = Follower
-	rf.heartbeatTimer.Stop()
 	rf.electionTimer.Reset(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond)
 	rf.votedFor = -1
 }
@@ -144,7 +143,6 @@ func (rf *Raft) convertToFollower() {
 func (rf *Raft) convertToLeader() {
 	rf.role = Leader
 	rf.electionTimer.Stop()
-	rf.heartbeatTimer.Reset(minTime * time.Millisecond)
 }
 
 func (rf *Raft) convertToCandidate() {
@@ -168,6 +166,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.currentTerm = args.Term
 		rf.convertToFollower()
 	}
+
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true // true because term is greater than or equal to currentTerm
@@ -200,29 +199,20 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	return ok
 }
 
-func (rf *Raft) handleElectionTimeout() {
-	if rf.role == Follower {
-		rf.convertToCandidate()
-	}
-	rf.startElection()
-}
-
-func (rf *Raft) handleHeartbeatTimeout() {
-	if rf.role == Leader {
-		rf.broadcastHeartbeat()
-		time.Sleep(heartbeatInverval * time.Millisecond)
-		rf.heartbeatTimer.Reset(timeInterval * time.Millisecond)
-	}
-}
-
 func (rf *Raft) routine() {
 	for {
 		select {
 		case <-rf.electionTimer.C:
-			rf.handleElectionTimeout()
-
-		case <-rf.heartbeatTimer.C:
-			rf.handleHeartbeatTimeout()
+			if rf.role == Follower {
+				rf.convertToCandidate()
+			}
+			rf.startElection()
+		default:
+			if rf.role == Leader && (time.Since(rf.lastHeartbeatSent) > heartbeatInverval) {
+				rf.lastHeartbeatSent = time.Now()
+				rf.broadcastHeartbeat()
+				time.Sleep(heartbeatInverval * time.Millisecond)
+			}
 		}
 	}
 }
