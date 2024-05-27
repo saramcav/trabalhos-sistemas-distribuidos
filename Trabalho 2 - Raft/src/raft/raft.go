@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -15,11 +14,8 @@ const (
 	Candidate
 	Leader
 
-	//10 heartbeats per second
-	heartbeatInverval = 100
-	//time between 250 and 400 ms
-	timeInterval = 150 + 1
-	minTime      = 250
+	//max 10 heartbeats per second
+	heartbeatInterval = 100 * time.Millisecond
 )
 
 type AppendEntriesArgs struct {
@@ -49,12 +45,23 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-	currentTerm   int
-	votedFor      int
-	role          Role // role of server (0: follower, 1: candidate, 2: leader)
-	votesReceived int
-	leaderId      int
-	electionTimer *time.Timer
+	currentTerm    int
+	votedFor       int
+	role           Role // role of server (0: follower, 1: candidate, 2: leader)
+	votesReceived  int
+	leaderId       int
+	electionTimer  *time.Timer
+	heartbeatTimer *time.Timer
+}
+
+type RequestVoteArgs struct {
+	Term        int
+	CandidateId int
+}
+
+type RequestVoteReply struct {
+	Term        int
+	VoteGranted bool
 }
 
 // return currentTerm and whether this server
@@ -81,14 +88,11 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 }
 
-type RequestVoteArgs struct {
-	Term        int
-	CandidateId int
-}
-
-type RequestVoteReply struct {
-	Term        int
-	VoteGranted bool
+func randomTimeout() time.Duration {
+	//time between 250 and 400 ms
+	const minTimeout = 250
+	const timeoutInterval = 150 + 1
+	return time.Duration(minTimeout+rand.Intn(timeoutInterval)) * time.Millisecond
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
@@ -119,7 +123,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.currentTerm = 0
 	rf.votedFor = -1
 	rf.role = Follower
-	rf.electionTimer = time.NewTimer(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond)
+	rf.electionTimer = time.NewTimer(randomTimeout())
+	rf.heartbeatTimer = time.NewTimer(heartbeatInterval)
 	rf.votesReceived = 0
 	rf.leaderId = -1
 
@@ -134,26 +139,28 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 func (rf *Raft) convertToFollower() {
 	rf.role = Follower
-	rf.electionTimer.Reset(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond)
+	rf.heartbeatTimer.Stop()
+	rf.electionTimer.Reset(randomTimeout())
 	rf.votedFor = -1
 }
 
 func (rf *Raft) convertToLeader() {
 	rf.role = Leader
 	rf.electionTimer.Stop()
+	rf.heartbeatTimer.Reset(heartbeatInterval)
 }
 
 func (rf *Raft) convertToCandidate() {
 	rf.role = Candidate
+	rf.heartbeatTimer.Stop()
 }
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	fmt.Println("[REQUESTVOTE] me:", rf.me, "currentTerm:", rf.currentTerm, "args:", args)
+	//fmt.Println("[REQUEST-VOTE] me:", rf.me, "currentTerm:", rf.currentTerm, "args:", args)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	//Reply false if term < currentTerm (§5.1)
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
@@ -167,20 +174,25 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
 		rf.votedFor = args.CandidateId
-		reply.VoteGranted = true // true because term is greater than or equal to currentTerm
+		reply.VoteGranted = true
 	}
 
 	reply.Term = rf.currentTerm
-	rf.electionTimer.Reset(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond)
+	rf.electionTimer.Reset(randomTimeout())
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	//fmt.Println("[APPEND-ENTRIES] me:", rf.me, "currentTerm:", rf.currentTerm, "args:", args)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	if args.LeaderId != rf.leaderId {
+		rf.leaderId = args.LeaderId
+	}
+
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
-		reply.Success = false // false because term is less than currentTerm
+		reply.Success = false
 		return
 	}
 
@@ -189,7 +201,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.convertToFollower()
 	}
 
-	rf.electionTimer.Reset(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond)
+	rf.electionTimer.Reset(randomTimeout())
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -204,52 +216,54 @@ func (rf *Raft) routine() {
 			if rf.role == Follower {
 				rf.convertToCandidate()
 			}
-			rf.startElection()
-		default:
+			if rf.role == Candidate {
+				rf.startElection()
+			}
+		case <-rf.heartbeatTimer.C:
 			if rf.role == Leader {
 				rf.broadcastHeartbeat()
-				time.Sleep(heartbeatInverval * time.Millisecond)
+				rf.heartbeatTimer.Reset(heartbeatInterval)
 			}
 		}
 	}
 }
 
 func (rf *Raft) startElection() {
-	rf.currentTerm++    //Increment currentTerm
-	rf.votedFor = rf.me // vote for self
+	rf.currentTerm++
+	rf.votedFor = rf.me
 	rf.votesReceived = 1
-	rf.electionTimer.Reset(time.Duration(minTime+rand.Intn(timeInterval)) * time.Millisecond) //Reset election timer
-	go rf.broadcastRequestVote()                                                              // start broadcasting request vote RPC messages
+	rf.electionTimer.Reset(randomTimeout())
+	go rf.broadcastRequestVote()
 }
 
 func (rf *Raft) broadcastRequestVote() {
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			rf.mu.Lock()
 			requestVoteArgs := &RequestVoteArgs{
 				Term:        rf.currentTerm,
 				CandidateId: rf.me,
 			}
 			requestVoteReply := &RequestVoteReply{}
-			rf.mu.Unlock()
 
 			go func(i int) {
 				ok := rf.sendRequestVote(i, requestVoteArgs, requestVoteReply)
-				if ok {
-					rf.mu.Lock()
-					if requestVoteReply.VoteGranted {
-						rf.votesReceived++
-						if rf.votesReceived > len(rf.peers)/2 {
-							fmt.Println("[LEADER ELECTED]", rf.me)
-							rf.convertToLeader()
-						}
-
-					} else if requestVoteReply.Term > rf.currentTerm {
-						fmt.Println("requestVoteReply.Term > rf.currentTerm")
-						rf.convertToFollower()
-					}
-					rf.mu.Unlock()
+				if !ok {
+					return
 				}
+				rf.mu.Lock()
+				if requestVoteReply.VoteGranted {
+					rf.votesReceived++
+					if rf.votesReceived > len(rf.peers)/2 {
+						//fmt.Println("[LEADER ELECTED]", rf.me)
+						rf.convertToLeader()
+						rf.broadcastHeartbeat()
+						rf.heartbeatTimer.Reset(heartbeatInterval)
+					}
+
+				} else if requestVoteReply.Term > rf.currentTerm {
+					rf.convertToFollower()
+				}
+				rf.mu.Unlock()
 			}(i)
 		}
 	}
@@ -259,22 +273,19 @@ func (rf *Raft) broadcastHeartbeat() {
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
 			go func(i int) {
-				rf.mu.Lock()
 				appendEntriesArgs := &AppendEntriesArgs{
 					Term:     rf.currentTerm,
 					LeaderId: rf.me,
 				}
-				rf.mu.Unlock()
 				appendEntriesReply := &AppendEntriesReply{}
 				ok := rf.sendAppendEntries(i, appendEntriesArgs, appendEntriesReply)
 
+				rf.mu.Lock()
 				if ok && !appendEntriesReply.Success && appendEntriesReply.Term > rf.currentTerm {
-					rf.mu.Lock()
 					rf.currentTerm = appendEntriesReply.Term
 					rf.convertToFollower()
-
-					rf.mu.Unlock()
 				}
+				rf.mu.Unlock()
 			}(i)
 		}
 	}
