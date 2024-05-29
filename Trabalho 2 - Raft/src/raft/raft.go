@@ -155,7 +155,6 @@ func (rf *Raft) convertToCandidate() {
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	//fmt.Println("[REQUEST-VOTE] me:", rf.me, "currentTerm:", rf.currentTerm, "args:", args)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -180,7 +179,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	//fmt.Println("[APPEND-ENTRIES] me:", rf.me, "currentTerm:", rf.currentTerm, "args:", args)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -252,7 +250,6 @@ func (rf *Raft) broadcastRequestVote() {
 				if requestVoteReply.VoteGranted {
 					rf.votesReceived++
 					if rf.votesReceived > len(rf.peers)/2 {
-						//fmt.Println("[LEADER ELECTED]", rf.me)
 						rf.convertToLeader()
 						rf.broadcastHeartbeat()
 						rf.heartbeatTimer.Reset(heartbeatInterval)
