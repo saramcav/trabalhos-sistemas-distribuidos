@@ -147,7 +147,6 @@ func (rf *Raft) convertToFollower() {
 func (rf *Raft) convertToLeader() {
 	rf.role = Leader
 	rf.electionTimer.Stop()
-	rf.heartbeatTimer.Reset(heartbeatInterval)
 }
 
 func (rf *Raft) convertToCandidate() {
@@ -155,7 +154,6 @@ func (rf *Raft) convertToCandidate() {
 	rf.heartbeatTimer.Stop()
 }
 
-// example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//fmt.Println("[REQUEST-VOTE] me:", rf.me, "currentTerm:", rf.currentTerm, "args:", args)
 	rf.mu.Lock()
