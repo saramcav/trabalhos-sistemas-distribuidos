@@ -69,11 +69,12 @@ type RequestVoteReply struct {
 func (rf *Raft) GetState() (int, bool) {
 	// Your code here (2A).
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	var term int
 	var isleader bool
 	term = rf.currentTerm
 	isleader = rf.role == Leader
-	rf.mu.Unlock()
 
 	return term, isleader
 }
@@ -86,13 +87,6 @@ func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
-}
-
-func randomTimeout() time.Duration {
-	//time between 250 and 400 ms
-	const minTimeout = 250
-	const timeoutInterval = 150 + 1
-	return time.Duration(minTimeout+rand.Intn(timeoutInterval)) * time.Millisecond
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
@@ -112,6 +106,13 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 func (rf *Raft) Kill() {
 
+}
+
+func randomTimeout() time.Duration {
+	//time between 250 and 400 ms
+	const minTimeout = 250
+	const timeoutInterval = 150 + 1
+	return time.Duration(minTimeout+rand.Intn(timeoutInterval)) * time.Millisecond
 }
 
 func Make(peers []*labrpc.ClientEnd, me int,
@@ -209,17 +210,21 @@ func (rf *Raft) routine() {
 	for {
 		select {
 		case <-rf.electionTimer.C:
+			rf.mu.Lock()
 			if rf.role == Follower {
 				rf.convertToCandidate()
 			}
 			if rf.role == Candidate {
 				rf.startElection()
 			}
+			rf.mu.Unlock()
 		case <-rf.heartbeatTimer.C:
+			rf.mu.Lock()
 			if rf.role == Leader {
 				rf.broadcastHeartbeat()
 				rf.heartbeatTimer.Reset(heartbeatInterval)
 			}
+			rf.mu.Unlock()
 		}
 	}
 }
@@ -234,55 +239,67 @@ func (rf *Raft) startElection() {
 
 func (rf *Raft) broadcastRequestVote() {
 	for i := 0; i < len(rf.peers); i++ {
-		if i != rf.me {
-			requestVoteArgs := &RequestVoteArgs{
-				Term:        rf.currentTerm,
-				CandidateId: rf.me,
-			}
-			requestVoteReply := &RequestVoteReply{}
-
-			go func(i int) {
-				ok := rf.sendRequestVote(i, requestVoteArgs, requestVoteReply)
-				if !ok {
-					return
-				}
-				rf.mu.Lock()
-				if requestVoteReply.VoteGranted {
-					rf.votesReceived++
-					if rf.votesReceived > len(rf.peers)/2 {
-						rf.convertToLeader()
-						rf.broadcastHeartbeat()
-						rf.heartbeatTimer.Reset(heartbeatInterval)
-					}
-
-				} else if requestVoteReply.Term > rf.currentTerm {
-					rf.convertToFollower()
-				}
-				rf.mu.Unlock()
-			}(i)
+		if i == rf.me {
+			continue
 		}
+
+		rf.mu.Lock()
+		requestVoteArgs := &RequestVoteArgs{
+			Term:        rf.currentTerm,
+			CandidateId: rf.me,
+		}
+		rf.mu.Unlock()
+		requestVoteReply := &RequestVoteReply{}
+
+		go func(i int) {
+			ok := rf.sendRequestVote(i, requestVoteArgs, requestVoteReply)
+			if !ok {
+				return
+			}
+
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+
+			if requestVoteReply.VoteGranted {
+				rf.votesReceived++
+				if rf.votesReceived > len(rf.peers)/2 {
+					rf.convertToLeader()
+					rf.broadcastHeartbeat()
+					rf.heartbeatTimer.Reset(heartbeatInterval)
+				}
+
+			} else if requestVoteReply.Term > rf.currentTerm {
+				rf.convertToFollower()
+			}
+		}(i)
 	}
 }
 
 func (rf *Raft) broadcastHeartbeat() {
 	for i := 0; i < len(rf.peers); i++ {
-		if i != rf.me {
-			go func(i int) {
-				appendEntriesArgs := &AppendEntriesArgs{
-					Term:     rf.currentTerm,
-					LeaderId: rf.me,
-				}
-				appendEntriesReply := &AppendEntriesReply{}
-				ok := rf.sendAppendEntries(i, appendEntriesArgs, appendEntriesReply)
-
-				rf.mu.Lock()
-				if ok && !appendEntriesReply.Success && appendEntriesReply.Term > rf.currentTerm {
-					rf.currentTerm = appendEntriesReply.Term
-					rf.convertToFollower()
-				}
-				rf.mu.Unlock()
-			}(i)
+		if i == rf.me {
+			continue
 		}
+
+		go func(i int) {
+			rf.mu.Lock()
+			appendEntriesArgs := &AppendEntriesArgs{
+				Term:     rf.currentTerm,
+				LeaderId: rf.me,
+			}
+			rf.mu.Unlock()
+			appendEntriesReply := &AppendEntriesReply{}
+
+			ok := rf.sendAppendEntries(i, appendEntriesArgs, appendEntriesReply)
+
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+
+			if ok && !appendEntriesReply.Success && appendEntriesReply.Term > rf.currentTerm {
+				rf.currentTerm = appendEntriesReply.Term
+				rf.convertToFollower()
+			}
+		}(i)
 	}
 }
 
