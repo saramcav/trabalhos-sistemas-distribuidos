@@ -12,12 +12,12 @@ Este projeto tem como objetivo implementar uma chamada remota de procedimento (R
 
 ## Trabalho 2 - Raft
 
-Este projeto foi desenvolvido com base no artigo que define o algoritmo de consenso RAFT, intitulado [*In Search of an Understandable Consensus Algorithm*](https://raft.github.io/raft.pdf),de Diego Ongaro e John Ousterhout, da Universidade de Stanford.
+Este projeto foi desenvolvido com base no artigo que define o algoritmo de consenso RAFT, intitulado [*In Search of an Understandable Consensus Algorithm*](https://raft.github.io/raft.pdf), de Diego Ongaro e John Ousterhout, da Universidade de Stanford.
 
 Utilizamos como referência o laboratório [Lab2 - RAFT](http://www.cs.bu.edu/~jappavoo/jappavoo.github.com/451/labs/lab-raft.html), parte do curso **CS451/651 - Distributed Systems**, oferecido pela Universidade de Boston.
 
 ### Configurando ambiente
-Primeiramente clone o repositório: <br/>
+Primeiro clone o repositório: <br/>
 `git clone https://github.com/SerranoZz/trabalho-sd.git`
 
 #### Configurando variáveis de ambiente (Windows)
@@ -53,3 +53,10 @@ Primeiramente clone o repositório: <br/>
 `cd src/raft`
 8. Execute o comando: <br/>
 `go test -run 2A`
+
+## Colaboradores
+
+Os trabalhos foram realizados em grupo com:
+
+- [Bruno Adji](https://github.com/brunoadji)
+- [Lucas Serrano](https://github.com/SerranoZz)
